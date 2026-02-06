@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 
 export interface ImgwAlertsStackProps extends cdk.StackProps {
@@ -6,6 +7,9 @@ export interface ImgwAlertsStackProps extends cdk.StackProps {
 }
 
 export class ImgwAlertsStack extends cdk.Stack {
+  public readonly waterAlertsTable: dynamodb.Table;
+  public readonly waterAlertEventsTable: dynamodb.Table;
+
   constructor(scope: Construct, id: string, props?: ImgwAlertsStackProps) {
     super(scope, id, props);
 
@@ -14,18 +18,74 @@ export class ImgwAlertsStack extends cdk.Stack {
     cdk.Tags.of(this).add('Environment', this.node.tryGetContext('env') || 'dev');
     cdk.Tags.of(this).add('ManagedBy', 'CDK');
 
-    // TODO: Add resources here
-    // - DynamoDB tables (WaterAlerts, WaterAlertEvents)
+    // DynamoDB table: WaterAlerts (Alert Configurations)
+    // Schema: pk (partition key), sk (sort key)
+    // Key scheme: pk = "ALERT", sk = "{stationId}#{alertId}"
+    this.waterAlertsTable = new dynamodb.Table(this, 'WaterAlerts', {
+      tableName: 'WaterAlerts',
+      partitionKey: {
+        name: 'pk',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'sk',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand billing
+      pointInTimeRecovery: true, // PITR enabled
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Retain table on stack deletion
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    });
+
+    // DynamoDB table: WaterAlertEvents (Notification History / Audit Log)
+    // Schema: pk (partition key), sk (sort key)
+    // Key scheme: pk = "ALERT#{stationId}#{alertId}", sk = "MEASUREMENT#{measurementTimestampIso}#{ulid}"
+    // TTL: Items with ttlEpochSeconds < current time will be automatically deleted
+    this.waterAlertEventsTable = new dynamodb.Table(this, 'WaterAlertEvents', {
+      tableName: 'WaterAlertEvents',
+      partitionKey: {
+        name: 'pk',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'sk',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand billing
+      timeToLiveAttribute: 'ttlEpochSeconds', // TTL attribute for automatic cleanup
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Retain table on stack deletion
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    });
+
+    // Output table names for reference
+    new cdk.CfnOutput(this, 'WaterAlertsTableName', {
+      value: this.waterAlertsTable.tableName,
+      description: 'Name of the WaterAlerts DynamoDB table',
+      exportName: `${this.stackName}-WaterAlertsTableName`,
+    });
+
+    new cdk.CfnOutput(this, 'WaterAlertsTableArn', {
+      value: this.waterAlertsTable.tableArn,
+      description: 'ARN of the WaterAlerts DynamoDB table',
+      exportName: `${this.stackName}-WaterAlertsTableArn`,
+    });
+
+    new cdk.CfnOutput(this, 'WaterAlertEventsTableName', {
+      value: this.waterAlertEventsTable.tableName,
+      description: 'Name of the WaterAlertEvents DynamoDB table',
+      exportName: `${this.stackName}-WaterAlertEventsTableName`,
+    });
+
+    new cdk.CfnOutput(this, 'WaterAlertEventsTableArn', {
+      value: this.waterAlertEventsTable.tableArn,
+      description: 'ARN of the WaterAlertEvents DynamoDB table',
+      exportName: `${this.stackName}-WaterAlertEventsTableArn`,
+    });
+
+    // TODO: Add remaining resources
     // - Lambda function
     // - EventBridge Scheduler
     // - IAM roles and policies
     // - SSM parameter (placeholder)
-
-    // Dummy resource for initial bootstrap test
-    // This will be replaced with actual resources in subsequent tasks
-    new cdk.CfnOutput(this, 'StackName', {
-      value: this.stackName,
-      description: 'Name of this CDK stack',
-    });
   }
 }
