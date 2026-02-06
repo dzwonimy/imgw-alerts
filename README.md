@@ -21,11 +21,17 @@ This project periodically checks water levels (`stan_wody`) reported by the Poli
 
 For detailed architecture and design decisions, see [docs/DESIGN.md](./docs/DESIGN.md).
 
+For instructions on managing alert configurations in DynamoDB, see [docs/DYNAMODB.md](./docs/DYNAMODB.md).
+
+For step-by-step deployment instructions, see [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md).
+
 ## Project Structure
 
 ```
 .
 ├── docs/              # Design documentation
+│   ├── DESIGN.md      # Architecture and design decisions
+│   └── DYNAMODB.md    # DynamoDB configuration guide
 ├── infra/             # AWS CDK infrastructure code
 ├── services/          # Application code
 │   └── worker/        # Lambda function code
@@ -135,6 +141,34 @@ npm run synth    # Generate CloudFormation template
 npm run diff     # See what will change
 npm run destroy  # Remove the stack
 ```
+
+## Observability
+
+### CloudWatch Logs
+
+The Lambda function uses structured JSON logging. Each log entry includes:
+- `logLevel`: `INFO` or `ERROR`
+- `message`: Human-readable message
+- `timestamp`: ISO timestamp
+- Alert context: `stationId`, `level`, `matched`, `status`, etc.
+
+**Secrets are automatically redacted** - any field containing "token", "secret", "password", etc. will be logged as `[REDACTED]`.
+
+### CloudWatch Alarms
+
+A CloudWatch alarm monitors Lambda errors:
+- **Alarm Name**: `imgw-alerts-worker-errors`
+- **Metric**: Lambda errors (sum over 1 day)
+- **Threshold**: > 0 errors
+- **Action**: Optional SNS email notification (if configured)
+
+**To enable email notifications**, deploy with:
+```bash
+cd infra
+npx cdk deploy --context alarmEmail=your-email@example.com
+```
+
+The first time you subscribe an email to SNS, AWS will send a confirmation email. Click the confirmation link before the alarm can send notifications.
 
 ## Security
 

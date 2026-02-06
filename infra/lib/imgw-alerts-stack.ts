@@ -6,6 +6,10 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import * as targets from 'aws-cdk-lib/aws-scheduler-targets';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatch_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Construct } from 'constructs';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -253,6 +257,48 @@ export class ImgwAlertsStack extends cdk.Stack {
       value: this.scheduler.scheduleName,
       description: 'Name of the EventBridge Scheduler',
       exportName: `${this.stackName}-SchedulerName`,
+    });
+
+    // CloudWatch Alarm: Lambda errors
+    // Alarms when Lambda function has errors > 0 over 1 day
+    const errorAlarm = new cloudwatch.Alarm(this, 'WorkerFunctionErrorAlarm', {
+      alarmName: 'imgw-alerts-worker-errors',
+      metric: this.workerFunction.metricErrors({
+        period: cdk.Duration.days(1),
+        statistic: 'Sum',
+      }),
+      threshold: 0,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription: 'Alerts when Lambda function has errors',
+    });
+
+    // Optional: SNS topic for alarm notifications (if email provided via context)
+    const alarmEmail = this.node.tryGetContext('alarmEmail');
+    if (alarmEmail) {
+      const alarmTopic = new sns.Topic(this, 'AlarmTopic', {
+        displayName: 'IMGW Alerts Alarm Notifications',
+        topicName: 'imgw-alerts-alarms',
+      });
+
+      alarmTopic.addSubscription(
+        new subscriptions.EmailSubscription(alarmEmail)
+      );
+
+      errorAlarm.addAlarmAction(new cloudwatch_actions.SnsAction(alarmTopic));
+
+      new cdk.CfnOutput(this, 'AlarmTopicArn', {
+        value: alarmTopic.topicArn,
+        description: 'SNS topic ARN for alarm notifications',
+        exportName: `${this.stackName}-AlarmTopicArn`,
+      });
+    }
+
+    new cdk.CfnOutput(this, 'ErrorAlarmName', {
+      value: errorAlarm.alarmName,
+      description: 'CloudWatch alarm name for Lambda errors',
+      exportName: `${this.stackName}-ErrorAlarmName`,
     });
   }
 }
