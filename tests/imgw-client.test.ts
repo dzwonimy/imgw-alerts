@@ -8,6 +8,11 @@ describe('ImgwClient', () => {
     jest.clearAllMocks();
   });
 
+  afterEach(() => {
+    // Clear any pending timers
+    jest.clearAllTimers();
+  });
+
   describe('convertToNumber', () => {
     it('should convert valid numbers', () => {
       expect(convertToNumber(123)).toBe(123);
@@ -207,6 +212,9 @@ describe('ImgwClient', () => {
     });
 
     it('should handle timeout', async () => {
+      // Use fake timers to prevent actual setTimeout from running
+      jest.useFakeTimers();
+
       (global.fetch as jest.Mock).mockImplementationOnce(
         (_url: string, options?: { signal?: AbortSignal }) => {
           return new Promise((_resolve, reject) => {
@@ -233,10 +241,23 @@ describe('ImgwClient', () => {
         }
       );
 
-      await expect(
-        fetchStationData('149200090', { baseUrl: mockBaseUrl, timeout: 100 })
-      ).rejects.toThrow('Request timeout');
-    }, 10000); // Increase timeout for this test
+      const fetchPromise = fetchStationData('149200090', {
+        baseUrl: mockBaseUrl,
+        timeout: 100,
+      });
+
+      // Fast-forward time to trigger timeout
+      jest.advanceTimersByTime(100);
+      
+      // Run all pending timers to ensure cleanup
+      jest.runAllTimers();
+
+      await expect(fetchPromise).rejects.toThrow('Request timeout');
+
+      // Clear all timers and restore real timers
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
 
     it('should handle invalid measurement in array', async () => {
       const mockResponse = [

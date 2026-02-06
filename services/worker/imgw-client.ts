@@ -27,19 +27,17 @@ export async function fetchStationData(
   const timeout = options.timeout || 10000; // 10 seconds default
   const url = `${baseUrl}${stationId}`;
 
-  try {
-    // Fetch with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+  // Fetch with timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+  try {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         'Accept': 'application/json',
       },
     });
-
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`IMGW API returned status ${response.status}: ${response.statusText}`);
@@ -67,6 +65,9 @@ export async function fetchStationData(
       throw error;
     }
     throw new Error(`Unknown error: ${String(error)}`);
+  } finally {
+    // Always clear the timeout to prevent open handles
+    clearTimeout(timeoutId);
   }
 }
 
