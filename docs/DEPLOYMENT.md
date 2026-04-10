@@ -44,8 +44,8 @@ AWS_PROFILE=personal npx cdk deploy -c defaultTelegramChatId=YOUR_TELEGRAM_CHAT_
 - DynamoDB tables (`WaterAlerts`, `WaterAlertEvents`)
 - SSM Parameter (placeholder - you already created the actual one)
 - Lambda function (`imgw-alerts-worker`)
-- Lambda function (`imgw-alerts-admin-api`) with a **Function URL** (output `AdminApiUrl`) — HTTP JSON API at `{AdminApiUrl}alerts` for alert CRUD and live water levels (`GET`). **No authentication**; treat the URL as a secret.
-- S3 **static website** for the admin UI (output `AdminUiWebsiteUrl`). The UI loads `config.json` from the same bucket (injected at deploy time with `apiBaseUrl`). **HTTP only** (S3 website endpoint). **No authentication** on the UI or API.
+- Lambda function (`imgw-alerts-admin-api`) with a **Function URL** (output `AdminApiUrl`) — direct HTTPS URL to the API (`{AdminApiUrl}alerts`). **No authentication**; prefer the CloudFront URL below for daily use.
+- **CloudFront** distribution (output `AdminUiUrl`) — **HTTPS** entry point: serves the admin UI from a **private** S3 bucket (origin access control) and proxies **`/alerts`** to the same Lambda Function URL. Deploy injects `config.json` with `apiBaseUrl` set to this distribution (same host as the UI). **No authentication** on the UI or API.
 - EventBridge Scheduler (daily at 19:00 Europe/Warsaw)
 - CloudWatch Log Group
 - CloudWatch Alarm (optional SNS if email provided)
@@ -57,7 +57,7 @@ AWS_PROFILE=personal npx cdk deploy --context alarmEmail=your-email@example.com
 
 **Note:** The first time you add an email subscription, AWS will send a confirmation email. You must click the confirmation link before alarms can send notifications.
 
-**Local admin UI (optional):** from `services/admin-ui`, run `VITE_API_URL=https://…lambda-url… npm run dev` so the dev server calls your deployed API (CORS is open).
+**Local admin UI (optional):** from `services/admin-ui`, run `VITE_API_URL=https://…` with either your **CloudFront** base URL (`AdminUiUrl`, no path) or the **Lambda Function URL** base (`AdminApiUrl`), so the dev server calls the deployed API (CORS is open).
 
 ### 3. Create Your First Alert
 
@@ -125,6 +125,7 @@ The EventBridge Scheduler runs daily at 19:00 Europe/Warsaw time. To test immedi
 ## Post-Deployment Checklist
 
 - [ ] SSM parameter `/water-alerts/telegram/bot-token` exists with your bot token
+- [ ] Open **`AdminUiUrl`** from stack outputs (HTTPS CloudFront); the old public S3 website URL is no longer used
 - [ ] DynamoDB table `WaterAlerts` has at least one alert configured
 - [ ] Alert has `enabled: true`
 - [ ] Telegram chat ID is correct

@@ -12,6 +12,8 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -28,6 +30,7 @@ export class ImgwAlertsStack extends cdk.Stack {
   public readonly adminApiFunction: lambda.Function;
   public readonly adminApiUrl: lambda.FunctionUrl;
   public readonly adminUiBucket: s3.Bucket;
+  public readonly adminUiDistribution: cloudfront.Distribution;
   public readonly scheduler: scheduler.Schedule;
 
   constructor(scope: Construct, id: string, props?: ImgwAlertsStackProps) {
@@ -203,7 +206,8 @@ export class ImgwAlertsStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'AdminApiUrl', {
       value: this.adminApiUrl.url,
-      description: 'Admin API base URL (append /alerts). No authentication — do not share publicly.',
+      description:
+        'Lambda Function URL for admin API (append /alerts). Prefer CloudFront AdminUiUrl; this URL still works if leaked.',
       exportName: `${this.stackName}-AdminApiUrl`,
     });
 
@@ -213,15 +217,42 @@ export class ImgwAlertsStack extends cdk.Stack {
       exportName: `${this.stackName}-AdminApiFunctionName`,
     });
 
-    // S3 static site: admin UI (built during deploy) + config.json with API Function URL
+    // S3 bucket for admin UI assets (private; served only via CloudFront + OAC)
     const adminUiBucket = new s3.Bucket(this, 'AdminUiBucket', {
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ACLS_ONLY,
-      publicReadAccess: true,
-      websiteIndexDocument: 'index.html',
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
     this.adminUiBucket = adminUiBucket;
+
+    const adminS3Origin = origins.S3BucketOrigin.withOriginAccessControl(adminUiBucket);
+    const adminApiOrigin = new origins.FunctionUrlOrigin(this.adminApiUrl, {
+      readTimeout: cdk.Duration.seconds(60),
+    });
+
+    const adminUiDistribution = new cloudfront.Distribution(this, 'AdminUiDistribution', {
+      comment: 'imgw-alerts admin UI (S3) and /alerts -> Lambda Function URL',
+      defaultRootObject: 'index.html',
+      defaultBehavior: {
+        origin: adminS3Origin,
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+        compress: true,
+      },
+      additionalBehaviors: {
+        '/alerts': {
+          origin: adminApiOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+        },
+      },
+    });
+    this.adminUiDistribution = adminUiDistribution;
+
+    const adminUiBaseUrl = `https://${adminUiDistribution.distributionDomainName}`;
 
     new s3deploy.BucketDeployment(this, 'AdminUiDeployment', {
       sources: [
@@ -237,18 +268,20 @@ export class ImgwAlertsStack extends cdk.Stack {
           },
         }),
         s3deploy.Source.jsonData('config.json', {
-          apiBaseUrl: this.adminApiUrl.url,
+          apiBaseUrl: adminUiBaseUrl,
         }),
       ],
       destinationBucket: adminUiBucket,
+      distribution: adminUiDistribution,
+      distributionPaths: ['/*'],
       prune: true,
       memoryLimit: 1024,
     });
 
-    new cdk.CfnOutput(this, 'AdminUiWebsiteUrl', {
-      value: adminUiBucket.bucketWebsiteUrl,
-      description: 'Admin UI (S3 website, HTTP). Open this URL in a browser.',
-      exportName: `${this.stackName}-AdminUiWebsiteUrl`,
+    new cdk.CfnOutput(this, 'AdminUiUrl', {
+      value: adminUiBaseUrl,
+      description: 'Admin UI (HTTPS). Open this URL; API is same host at /alerts.',
+      exportName: `${this.stackName}-AdminUiUrl`,
     });
 
     // CloudWatch Log Group with 30-day retention

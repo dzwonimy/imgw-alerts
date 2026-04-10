@@ -7,15 +7,16 @@ A serverless AWS application that monitors Polish IMGW water level stations and 
 This project periodically checks water levels (`stan_wody`) reported by the Polish IMGW public API for configured hydro stations and sends Telegram notifications when readings fall within an alert's configured range.
 
 **Current Status:** Phase 1 - Initial Implementation
-- Single user, no UI
+- Single user; optional **admin UI** (Vite) behind **CloudFront** (HTTPS) with **Lambda Function URL** admin API
 - Daily scheduled checks (evening, Europe/Warsaw timezone)
-- Alert configuration managed directly in DynamoDB
+- Alert configuration via admin UI or DynamoDB
 
 ## Architecture
 
 - **EventBridge Scheduler** - Daily execution trigger
-- **AWS Lambda** - Check logic and notification sending
+- **AWS Lambda** - Worker (checks + Telegram); separate **admin-api** for CRUD and live IMGW data
 - **DynamoDB** - Alert configurations and event history
+- **CloudFront** - HTTPS admin UI (S3 origin) and `/alerts` to admin API
 - **SSM Parameter Store** - Secure storage for Telegram bot token
 - **Telegram Bot API** - Notification channel
 
@@ -34,7 +35,9 @@ For step-by-step deployment instructions, see [docs/DEPLOYMENT.md](./docs/DEPLOY
 │   └── DYNAMODB.md    # DynamoDB configuration guide
 ├── infra/             # AWS CDK infrastructure code
 ├── services/          # Application code
-│   └── worker/        # Lambda function code
+│   ├── worker/        # Scheduled Lambda (IMGW + Telegram)
+│   ├── admin-api/     # Lambda Function URL (alert CRUD)
+│   └── admin-ui/      # Static admin UI (built into S3 via CDK)
 └── tests/             # Test files
 ```
 
