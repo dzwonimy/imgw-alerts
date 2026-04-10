@@ -26,6 +26,7 @@ export class ImgwAlertsStack extends cdk.Stack {
   public readonly waterAlertsTable: dynamodb.Table;
   public readonly waterAlertEventsTable: dynamodb.Table;
   public readonly telegramBotTokenParameterName: string;
+  public readonly adminApiKeyParameterName: string;
   public readonly workerFunction: lambda.Function;
   public readonly adminApiFunction: lambda.Function;
   public readonly adminApiUrl: lambda.FunctionUrl;
@@ -115,11 +116,19 @@ export class ImgwAlertsStack extends cdk.Stack {
     // To create: AWS Console → Systems Manager → Parameter Store → Create parameter
     // Or via CLI: aws ssm put-parameter --name /water-alerts/telegram/bot-token --value "YOUR_TOKEN" --type SecureString
     this.telegramBotTokenParameterName = '/water-alerts/telegram/bot-token';
+    this.adminApiKeyParameterName = '/water-alerts/admin/api-key';
 
     new cdk.CfnOutput(this, 'TelegramBotTokenParameterName', {
       value: this.telegramBotTokenParameterName,
       description: 'SSM Parameter name for Telegram bot token (update value manually)',
       exportName: `${this.stackName}-TelegramBotTokenParameterName`,
+    });
+
+    new cdk.CfnOutput(this, 'AdminApiKeyParameterName', {
+      value: this.adminApiKeyParameterName,
+      description:
+        'Create this SSM SecureString manually; admin UI sends it as X-Admin-Key. Required for admin API.',
+      exportName: `${this.stackName}-AdminApiKeyParameterName`,
     });
 
     // Lambda function: IMGW Alerts Worker
@@ -171,11 +180,16 @@ export class ImgwAlertsStack extends cdk.Stack {
         ALERTS_TABLE_NAME: this.waterAlertsTable.tableName,
         DEFAULT_TELEGRAM_CHAT_ID: String(defaultTelegramChatId).trim(),
         IMGW_BASE_URL: 'https://danepubliczne.imgw.pl/api/data/hydro/id/',
+        ADMIN_API_KEY_PARAM: this.adminApiKeyParameterName,
       },
       timeout: cdk.Duration.seconds(60),
       memorySize: 256,
       bundling: {
-        nodeModules: ['@aws-sdk/client-dynamodb', '@aws-sdk/lib-dynamodb'],
+        nodeModules: [
+          '@aws-sdk/client-dynamodb',
+          '@aws-sdk/lib-dynamodb',
+          '@aws-sdk/client-ssm',
+        ],
         externalModules: [],
       },
       ...(fs.existsSync(rootPackageLock) ? { depsLockFilePath: rootPackageLock } : {}),
@@ -195,6 +209,16 @@ export class ImgwAlertsStack extends cdk.Stack {
         effect: iam.Effect.ALLOW,
         actions: ['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
         resources: [this.waterAlertsTable.tableArn],
+      })
+    );
+
+    adminApiFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+        resources: [
+          `arn:aws:ssm:${this.region}:${this.account}:parameter${this.adminApiKeyParameterName}`,
+        ],
       })
     );
 

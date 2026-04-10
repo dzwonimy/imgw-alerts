@@ -31,7 +31,23 @@ aws ssm put-parameter \
 2. Use `/newbot` to create a bot (or `/token` to get existing bot token)
 3. Copy the token and use it in the command above
 
-### 2. Deploy the Stack
+### 2. Set admin API key (SSM)
+
+The admin UI and `/alerts` API require a shared secret stored in SSM (same pattern as the bot token). Use a **long random** value (for example `openssl rand -base64 32`).
+
+```bash
+aws ssm put-parameter \
+  --name /water-alerts/admin/api-key \
+  --value "YOUR_LONG_RANDOM_SECRET" \
+  --type SecureString \
+  --profile personal
+```
+
+The exact name is in stack output **`AdminApiKeyParameterName`** (default `/water-alerts/admin/api-key`). You type this value once in the admin login screen; it is sent as header **`X-Admin-Key`** over HTTPS.
+
+If this parameter is missing or empty, the admin API returns **503** until you create it (or **401** when the key does not match).
+
+### 3. Deploy the Stack
 
 Deploy **must** include CDK context `defaultTelegramChatId` (same numeric Telegram chat ID you use on alert items). It is stored on the **admin API** Lambda and applied to alerts created via `POST /alerts` so the worker can send notifications.
 
@@ -44,8 +60,8 @@ AWS_PROFILE=personal npx cdk deploy -c defaultTelegramChatId=YOUR_TELEGRAM_CHAT_
 - DynamoDB tables (`WaterAlerts`, `WaterAlertEvents`)
 - SSM Parameter (placeholder - you already created the actual one)
 - Lambda function (`imgw-alerts-worker`)
-- Lambda function (`imgw-alerts-admin-api`) with a **Function URL** (output `AdminApiUrl`) — direct HTTPS URL to the API (`{AdminApiUrl}alerts`). **No authentication**; prefer the CloudFront URL below for daily use.
-- **CloudFront** distribution (output `AdminUiUrl`) — **HTTPS** entry point: serves the admin UI from a **private** S3 bucket (origin access control) and proxies **`/alerts`** to the same Lambda Function URL. Deploy injects `config.json` with `apiBaseUrl` set to this distribution (same host as the UI). **No authentication** on the UI or API.
+- Lambda function (`imgw-alerts-admin-api`) with a **Function URL** (output `AdminApiUrl`). Every **`/alerts`** request (except CORS preflight) must send header **`X-Admin-Key`** matching SSM **`AdminApiKeyParameterName`** (see step 2).
+- **CloudFront** distribution (output `AdminUiUrl`) — **HTTPS** entry point: admin UI from private S3 and **`/alerts`** proxied to the Lambda URL. After login, the UI stores the key in **sessionStorage** for the tab session.
 - EventBridge Scheduler (daily at 19:00 Europe/Warsaw)
 - CloudWatch Log Group
 - CloudWatch Alarm (optional SNS if email provided)
@@ -59,7 +75,7 @@ AWS_PROFILE=personal npx cdk deploy --context alarmEmail=your-email@example.com
 
 **Local admin UI (optional):** from `services/admin-ui`, run `VITE_API_URL=https://…` with either your **CloudFront** base URL (`AdminUiUrl`, no path) or the **Lambda Function URL** base (`AdminApiUrl`), so the dev server calls the deployed API (CORS is open).
 
-### 3. Create Your First Alert
+### 4. Create Your First Alert
 
 After deployment, create an alert in DynamoDB. See [DYNAMODB.md](./DYNAMODB.md) for detailed instructions.
 
@@ -88,7 +104,7 @@ aws dynamodb put-item \
 3. Visit: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
 4. Look for `"chat":{"id":123456789}` in the response
 
-### 4. Test the Lambda (Optional)
+### 5. Test the Lambda (Optional)
 
 You can manually invoke the Lambda to test it:
 
@@ -106,7 +122,7 @@ Check CloudWatch Logs for detailed output:
 aws logs tail /aws/lambda/imgw-alerts-worker --follow --profile personal
 ```
 
-### 5. Verify Scheduler
+### 6. Verify Scheduler
 
 The EventBridge Scheduler runs daily at 19:00 Europe/Warsaw time. To test immediately, you can:
 
@@ -125,6 +141,7 @@ The EventBridge Scheduler runs daily at 19:00 Europe/Warsaw time. To test immedi
 ## Post-Deployment Checklist
 
 - [ ] SSM parameter `/water-alerts/telegram/bot-token` exists with your bot token
+- [ ] SSM parameter **`/water-alerts/admin/api-key`** (or value of **`AdminApiKeyParameterName`**) exists as **SecureString** with your admin secret
 - [ ] Open **`AdminUiUrl`** from stack outputs (HTTPS CloudFront); the old public S3 website URL is no longer used
 - [ ] DynamoDB table `WaterAlerts` has at least one alert configured
 - [ ] Alert has `enabled: true`

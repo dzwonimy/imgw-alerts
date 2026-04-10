@@ -175,7 +175,7 @@ The first time you subscribe an email to SNS, AWS will send a confirmation email
 
 ## Security
 
-**Important:** Secrets (Telegram bot token) are stored in AWS SSM Parameter Store (SecureString) and are never committed to this repository.
+**Important:** Secrets are stored in AWS SSM Parameter Store (SecureString): Telegram bot token and **admin API key** (`/water-alerts/admin/api-key`). They are never committed to this repository. The admin UI sends the API key as **`X-Admin-Key`** over HTTPS and keeps it in **sessionStorage** until the tab is closed.
 
 ## License
 

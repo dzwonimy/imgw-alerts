@@ -1,4 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { timingSafeEqual } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
@@ -8,19 +9,69 @@ import {
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { fetchStationData } from '../worker/imgw-client';
 
 const PK_ALERT = 'ALERT';
 const UI_ALERT_SUFFIX = 'default';
 
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const ssmClient = new SSMClient({});
+
+/** undefined = not loaded yet; null = SSM missing/empty/error (fail closed for this cold start) */
+let cachedAdminKey: string | null | undefined = undefined;
 
 function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type,X-Admin-Key',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
   };
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
+
+async function resolveAdminKeyFromSsm(paramName: string): Promise<string | null> {
+  if (cachedAdminKey !== undefined) {
+    return cachedAdminKey;
+  }
+  try {
+    const out = await ssmClient.send(
+      new GetParameterCommand({ Name: paramName, WithDecryption: true })
+    );
+    const v = out.Parameter?.Value?.trim() ?? '';
+    cachedAdminKey = v.length > 0 ? v : null;
+    return cachedAdminKey;
+  } catch {
+    cachedAdminKey = null;
+    return null;
+  }
+}
+
+/**
+ * Validates X-Admin-Key against SSM SecureString. Call after OPTIONS, for /alerts only.
+ */
+async function requireAdminKey(
+  event: APIGatewayProxyEventV2,
+  paramName: string
+): Promise<APIGatewayProxyResultV2 | null> {
+  const expected = await resolveAdminKeyFromSsm(paramName);
+  if (!expected) {
+    return json(503, { error: 'Admin API key is not configured in SSM' });
+  }
+  const headers = event.headers ?? {};
+  const provided = headers['x-admin-key'] ?? headers['X-Admin-Key'] ?? '';
+  if (!provided || !constantTimeEqual(provided, expected)) {
+    return json(401, { error: 'Unauthorized' });
+  }
+  return null;
 }
 
 function json(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
@@ -53,9 +104,14 @@ export const handler = async (
   const tableName = process.env.ALERTS_TABLE_NAME;
   const imgwBaseUrl = process.env.IMGW_BASE_URL || 'https://danepubliczne.imgw.pl/api/data/hydro/id/';
   const defaultTelegramChatId = process.env.DEFAULT_TELEGRAM_CHAT_ID || '';
+  const adminKeyParam = process.env.ADMIN_API_KEY_PARAM || '';
 
   if (!tableName) {
     return json(500, { error: 'ALERTS_TABLE_NAME is not set' });
+  }
+
+  if (!adminKeyParam.trim()) {
+    return json(500, { error: 'ADMIN_API_KEY_PARAM is not set' });
   }
 
   const method = event.requestContext.http.method;
@@ -67,6 +123,11 @@ export const handler = async (
 
   if (path !== '/alerts') {
     return json(404, { error: 'Not found' });
+  }
+
+  const authErr = await requireAdminKey(event, adminKeyParam.trim());
+  if (authErr) {
+    return authErr;
   }
 
   try {

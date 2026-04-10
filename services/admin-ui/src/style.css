@@ -181,6 +181,72 @@ tbody tr:hover td.actions {
   color: var(--danger);
 }
 
+/* Login gate */
+.login-shell {
+  display: none;
+  min-height: 55vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  padding: 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.login-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.login-lead {
+  margin: 0 0 1.25rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.login-input {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 1rem;
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(61, 157, 240, 0.2);
+}
+
+.login-error {
+  margin: 0 0 0.75rem;
+  min-height: 1.35rem;
+  font-size: 0.875rem;
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+.login-submit {
+  width: 100%;
+}
+
+.main-shell {
+  display: none;
+}
+
 /* Modal */
 .modal-backdrop {
   position: fixed;

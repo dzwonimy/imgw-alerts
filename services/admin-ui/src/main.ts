@@ -17,7 +17,26 @@ interface AppConfig {
   apiBaseUrl?: string;
 }
 
+const ADMIN_KEY_STORAGE = 'imgwAdminApiKey';
+
 let apiBase = '';
+
+function readStoredAdminKey(): string {
+  return sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '';
+}
+
+function authFetchHeaders(extra?: Record<string, string>): Record<string, string> {
+  const k = readStoredAdminKey();
+  const h: Record<string, string> = { ...extra };
+  if (k) {
+    h['X-Admin-Key'] = k;
+  }
+  return h;
+}
+
+function clearAdminSession(): void {
+  sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+}
 
 async function resolveApiBase(): Promise<string> {
   const env = import.meta.env.VITE_API_URL as string | undefined;
@@ -43,8 +62,13 @@ function alertsUrl(): string {
 }
 
 async function apiGetAlerts(): Promise<AlertRow[]> {
-  const res = await fetch(alertsUrl());
+  const res = await fetch(alertsUrl(), { headers: authFetchHeaders() });
   const data = (await res.json()) as { alerts?: AlertRow[]; error?: string };
+  if (res.status === 401) {
+    clearAdminSession();
+    showLoginView();
+    throw new Error('Sesja wygasła lub brak uprawnień.');
+  }
   if (!res.ok) {
     throw new Error(data.error || res.statusText);
   }
@@ -59,10 +83,15 @@ async function apiCreate(body: {
 }): Promise<void> {
   const res = await fetch(alertsUrl(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authFetchHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
   const data = (await res.json()) as { error?: string };
+  if (res.status === 401) {
+    clearAdminSession();
+    showLoginView();
+    throw new Error('Sesja wygasła lub brak uprawnień.');
+  }
   if (!res.ok) {
     throw new Error(data.error || res.statusText);
   }
@@ -76,10 +105,15 @@ async function apiUpdate(body: {
 }): Promise<void> {
   const res = await fetch(alertsUrl(), {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authFetchHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
   const data = (await res.json()) as { error?: string };
+  if (res.status === 401) {
+    clearAdminSession();
+    showLoginView();
+    throw new Error('Sesja wygasła lub brak uprawnień.');
+  }
   if (!res.ok) {
     throw new Error(data.error || res.statusText);
   }
@@ -88,10 +122,15 @@ async function apiUpdate(body: {
 async function apiDelete(sk: string): Promise<void> {
   const res = await fetch(alertsUrl(), {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authFetchHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ sk }),
   });
   const data = (await res.json()) as { error?: string };
+  if (res.status === 401) {
+    clearAdminSession();
+    showLoginView();
+    throw new Error('Sesja wygasła lub brak uprawnień.');
+  }
   if (!res.ok) {
     throw new Error(data.error || res.statusText);
   }
@@ -118,6 +157,23 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 const app = document.querySelector('#app')!;
 
+const loginShell = el('div', 'login-shell');
+const loginCard = el('div', 'login-card');
+const loginTitle = el('h1', 'login-title', 'Panel administracyjny');
+const loginLead = el('p', 'login-lead', 'Wpisz hasło.');
+const keyInput = document.createElement('input');
+keyInput.type = 'password';
+keyInput.className = 'login-input';
+keyInput.autocomplete = 'current-password';
+keyInput.id = 'admin-key-input';
+const loginBtn = el('button', 'btn btn-primary login-submit', 'Zaloguj');
+const loginError = el('p', 'login-error');
+loginError.setAttribute('aria-live', 'polite');
+loginCard.append(loginTitle, loginLead, keyInput, loginError, loginBtn);
+loginShell.append(loginCard);
+
+const mainShell = el('div', 'main-shell');
+
 const header = el('header', 'page-head');
 const titleBlock = el('div', 'title-stack');
 const h1 = el('h1', '', 'Stacje i alerty');
@@ -127,7 +183,65 @@ const addBtn = el('button', 'btn btn-primary', 'Dodaj stację');
 header.append(titleBlock, addBtn);
 
 const tableWrap = el('div', 'table-wrap');
-app.append(header, tableWrap);
+mainShell.append(header, tableWrap);
+app.append(loginShell, mainShell);
+
+function showLoginView(): void {
+  loginShell.style.display = 'flex';
+  mainShell.style.display = 'none';
+}
+
+function showMainView(): void {
+  loginShell.style.display = 'none';
+  mainShell.style.display = 'block';
+}
+
+async function verifyAdminKey(secret: string): Promise<'ok' | 'bad' | 'error'> {
+  const res = await fetch(alertsUrl(), { headers: { 'X-Admin-Key': secret } });
+  if (res.status === 200) {
+    return 'ok';
+  }
+  if (res.status === 401) {
+    return 'bad';
+  }
+  let msg = res.statusText;
+  try {
+    const data = (await res.json()) as { error?: string };
+    if (data.error) msg = data.error;
+  } catch {
+    /* ignore */
+  }
+  throw new Error(msg);
+}
+
+loginBtn.addEventListener('click', async () => {
+  loginError.textContent = '';
+  const secret = keyInput.value.trim();
+  if (!secret) {
+    loginError.textContent = 'Wpisz hasło.';
+    return;
+  }
+  try {
+    const v = await verifyAdminKey(secret);
+    if (v === 'bad') {
+      loginError.textContent = 'Nieprawidłowe hasło.';
+      return;
+    }
+    sessionStorage.setItem(ADMIN_KEY_STORAGE, secret);
+    keyInput.value = '';
+    showMainView();
+    await refresh();
+  } catch (e) {
+    loginError.textContent = e instanceof Error ? e.message : String(e);
+  }
+});
+
+keyInput.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    loginBtn.click();
+  }
+});
 
 let rows: AlertRow[] = [];
 
@@ -383,16 +497,26 @@ async function boot(): Promise<void> {
   try {
     apiBase = await resolveApiBase();
   } catch (e) {
-    tableWrap.innerHTML = '';
-    const err = el(
-      'div',
-      'status-msg error',
-      e instanceof Error ? e.message : String(e)
+    loginShell.style.display = 'flex';
+    mainShell.style.display = 'none';
+    loginCard.innerHTML = '';
+    loginCard.append(
+      el('h1', 'login-title', 'Błąd konfiguracji'),
+      el(
+        'p',
+        'login-error',
+        e instanceof Error ? e.message : String(e)
+      )
     );
-    tableWrap.append(err);
     return;
   }
-  await refresh();
+
+  if (readStoredAdminKey()) {
+    showMainView();
+    await refresh();
+  } else {
+    showLoginView();
+  }
 }
 
 void boot();
