@@ -10,6 +10,8 @@ import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cloudwatch_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -23,6 +25,9 @@ export class ImgwAlertsStack extends cdk.Stack {
   public readonly waterAlertEventsTable: dynamodb.Table;
   public readonly telegramBotTokenParameterName: string;
   public readonly workerFunction: lambda.Function;
+  public readonly adminApiFunction: lambda.Function;
+  public readonly adminApiUrl: lambda.FunctionUrl;
+  public readonly adminUiBucket: s3.Bucket;
   public readonly scheduler: scheduler.Schedule;
 
   constructor(scope: Construct, id: string, props?: ImgwAlertsStackProps) {
@@ -119,7 +124,17 @@ export class ImgwAlertsStack extends cdk.Stack {
     // Entry path is relative to project root (one level up from infra/)
     const projectRoot = path.join(__dirname, '../..');
     const workerEntryPath = path.join(projectRoot, 'services/worker/index.ts');
+    const adminApiEntryPath = path.join(projectRoot, 'services/admin-api/index.ts');
     const rootPackageLock = path.join(projectRoot, 'package-lock.json');
+
+    const defaultTelegramChatId = this.node.tryGetContext('defaultTelegramChatId') as
+      | string
+      | undefined;
+    if (!defaultTelegramChatId || String(defaultTelegramChatId).trim() === '') {
+      throw new Error(
+        'CDK context "defaultTelegramChatId" is required (Telegram chat id for new alerts from the admin API). Example: cdk deploy -c defaultTelegramChatId=123456789'
+      );
+    }
     
     this.workerFunction = new NodejsFunction(this, 'WorkerFunction', {
       functionName: 'imgw-alerts-worker',
@@ -141,6 +156,103 @@ export class ImgwAlertsStack extends cdk.Stack {
       // Only use depsLockFilePath if it exists (optional)
       ...(fs.existsSync(rootPackageLock) ? { depsLockFilePath: rootPackageLock } : {}),
       projectRoot: projectRoot, // Tell NodejsFunction where the project root is
+    });
+
+    // Lambda: Admin HTTP API (CRUD on WaterAlerts + live IMGW levels for list)
+    const adminApiFunction = new NodejsFunction(this, 'AdminApiFunction', {
+      functionName: 'imgw-alerts-admin-api',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: adminApiEntryPath,
+      handler: 'handler',
+      environment: {
+        ALERTS_TABLE_NAME: this.waterAlertsTable.tableName,
+        DEFAULT_TELEGRAM_CHAT_ID: String(defaultTelegramChatId).trim(),
+        IMGW_BASE_URL: 'https://danepubliczne.imgw.pl/api/data/hydro/id/',
+      },
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 256,
+      bundling: {
+        nodeModules: ['@aws-sdk/client-dynamodb', '@aws-sdk/lib-dynamodb'],
+        externalModules: [],
+      },
+      ...(fs.existsSync(rootPackageLock) ? { depsLockFilePath: rootPackageLock } : {}),
+      projectRoot: projectRoot,
+    });
+
+    this.adminApiFunction = adminApiFunction;
+
+    new logs.LogGroup(this, 'AdminApiFunctionLogGroup', {
+      logGroupName: `/aws/lambda/${adminApiFunction.functionName}`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    adminApiFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
+        resources: [this.waterAlertsTable.tableArn],
+      })
+    );
+
+    this.adminApiUrl = adminApiFunction.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      cors: {
+        allowedOrigins: ['*'],
+        // OPTIONS is not valid for Lambda Function URL CORS in CloudFormation; use * for preflight + data methods.
+        allowedMethods: [lambda.HttpMethod.ALL],
+        allowedHeaders: ['content-type'],
+      },
+    });
+
+    new cdk.CfnOutput(this, 'AdminApiUrl', {
+      value: this.adminApiUrl.url,
+      description: 'Admin API base URL (append /alerts). No authentication — do not share publicly.',
+      exportName: `${this.stackName}-AdminApiUrl`,
+    });
+
+    new cdk.CfnOutput(this, 'AdminApiFunctionName', {
+      value: adminApiFunction.functionName,
+      description: 'Name of the admin API Lambda function',
+      exportName: `${this.stackName}-AdminApiFunctionName`,
+    });
+
+    // S3 static site: admin UI (built during deploy) + config.json with API Function URL
+    const adminUiBucket = new s3.Bucket(this, 'AdminUiBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ACLS_ONLY,
+      publicReadAccess: true,
+      websiteIndexDocument: 'index.html',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+    this.adminUiBucket = adminUiBucket;
+
+    new s3deploy.BucketDeployment(this, 'AdminUiDeployment', {
+      sources: [
+        s3deploy.Source.asset(path.join(projectRoot, 'services/admin-ui'), {
+          bundling: {
+            image: cdk.DockerImage.fromRegistry('node:20-bookworm-slim'),
+            command: [
+              'bash',
+              '-c',
+              'npm ci && npm run build && cp -r dist/. /asset-output/',
+            ],
+            user: 'root',
+          },
+        }),
+        s3deploy.Source.jsonData('config.json', {
+          apiBaseUrl: this.adminApiUrl.url,
+        }),
+      ],
+      destinationBucket: adminUiBucket,
+      prune: true,
+      memoryLimit: 1024,
+    });
+
+    new cdk.CfnOutput(this, 'AdminUiWebsiteUrl', {
+      value: adminUiBucket.bucketWebsiteUrl,
+      description: 'Admin UI (S3 website, HTTP). Open this URL in a browser.',
+      exportName: `${this.stackName}-AdminUiWebsiteUrl`,
     });
 
     // CloudWatch Log Group with 30-day retention

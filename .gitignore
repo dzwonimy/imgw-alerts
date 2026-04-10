@@ -36,3 +36,9 @@ logs/
 
 # OS
 Thumbs.db
+
+# Local / personal DynamoDB alert helpers (often contain Telegram chat IDs or one-off data)
+infra/add_alerts.sh
+infra/add_alerts_commands.sh
+infra/alerts_to_add.txt
+infra/response.json

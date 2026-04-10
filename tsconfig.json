@@ -28,6 +28,7 @@
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "**/*.spec.ts"
+    "**/*.spec.ts",
+    "services/admin-ui"
   ]
 }
