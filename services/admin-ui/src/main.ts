@@ -157,8 +157,8 @@ function levelStatusEmoji(r: AlertRow): string {
   const max = Number(r.maxLevel);
   if (Number.isNaN(min) || Number.isNaN(max)) return '';
   if (lv >= min && lv <= max) return '✅ ';
-  if (lv < min) return '⬇️ ';
-  return '⬆️ ';
+  if (lv < min) return '🔻 ';
+  return '🔺 ';
 }
 
 function renderTable(): void {
@@ -175,10 +175,10 @@ function renderTable(): void {
   for (const label of [
     'ID stacji',
     'Nazwa',
-    'Min (cm)',
-    'Max (cm)',
+    'Min',
+    'Max',
     'Stan wody',
-    'Przepływ (m³/s)',
+    'Przepływ',
     'Temp. wody',
     '',
   ]) {
