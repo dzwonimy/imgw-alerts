@@ -5,7 +5,7 @@ AWS CDK infrastructure code for the IMGW water level alerts system.
 ## Prerequisites
 
 - AWS CLI configured with credentials
-- Node.js 20+ (CDK is used via `npx`, no global install needed)
+- Node.js 24+ (CDK is used via `npx`, no global install needed)
 
 ## Setup
 

@@ -40,7 +40,7 @@ For step-by-step deployment instructions, see [docs/DEPLOYMENT.md](./docs/DEPLOY
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 24+
 - npm or yarn
 - AWS account (personal or work)
 - AWS CLI installed and configured

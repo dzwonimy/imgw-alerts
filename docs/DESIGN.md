@@ -162,9 +162,9 @@ EventBridge Scheduler is used (not a "rule" cron).
 ## 7. Lambda Design
 
 ### 7.1 Runtime and dependencies
-- Node.js 20
+- Node.js 24
 - TypeScript compiled output
-- HTTP client: built-in `fetch` (Node 18+ has it; Node 20 OK)
+- HTTP client: built-in `fetch` (Node 18+ has it; Node 24 OK)
 - AWS SDK v3 (available in Lambda runtime; but pin dependencies in package for predictable builds)
 
 ### 7.2 Configuration

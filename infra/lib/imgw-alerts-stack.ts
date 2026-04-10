@@ -120,7 +120,7 @@ export class ImgwAlertsStack extends cdk.Stack {
     });
 
     // Lambda function: IMGW Alerts Worker
-    // Node.js 20 runtime, bundles TypeScript code from services/worker
+    // Node.js 24 runtime, bundles TypeScript code from services/worker
     // Entry path is relative to project root (one level up from infra/)
     const projectRoot = path.join(__dirname, '../..');
     const workerEntryPath = path.join(projectRoot, 'services/worker/index.ts');
@@ -138,7 +138,7 @@ export class ImgwAlertsStack extends cdk.Stack {
     
     this.workerFunction = new NodejsFunction(this, 'WorkerFunction', {
       functionName: 'imgw-alerts-worker',
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       entry: workerEntryPath,
       handler: 'handler',
       environment: {
@@ -161,7 +161,7 @@ export class ImgwAlertsStack extends cdk.Stack {
     // Lambda: Admin HTTP API (CRUD on WaterAlerts + live IMGW levels for list)
     const adminApiFunction = new NodejsFunction(this, 'AdminApiFunction', {
       functionName: 'imgw-alerts-admin-api',
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       entry: adminApiEntryPath,
       handler: 'handler',
       environment: {
@@ -195,14 +195,10 @@ export class ImgwAlertsStack extends cdk.Stack {
       })
     );
 
+    // CORS is set only in the Lambda handler (admin-api) to avoid duplicate
+    // Access-Control-Allow-Origin headers (Function URL CORS + handler both add them → browser rejects).
     this.adminApiUrl = adminApiFunction.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
-      cors: {
-        allowedOrigins: ['*'],
-        // OPTIONS is not valid for Lambda Function URL CORS in CloudFormation; use * for preflight + data methods.
-        allowedMethods: [lambda.HttpMethod.ALL],
-        allowedHeaders: ['content-type'],
-      },
     });
 
     new cdk.CfnOutput(this, 'AdminApiUrl', {
@@ -231,7 +227,7 @@ export class ImgwAlertsStack extends cdk.Stack {
       sources: [
         s3deploy.Source.asset(path.join(projectRoot, 'services/admin-ui'), {
           bundling: {
-            image: cdk.DockerImage.fromRegistry('node:20-bookworm-slim'),
+            image: cdk.DockerImage.fromRegistry('node:24-bookworm-slim'),
             command: [
               'bash',
               '-c',
