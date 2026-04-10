@@ -82,14 +82,29 @@ export const handler = async (
       const items = (query.Items || []) as Array<Record<string, unknown>>;
       const stationIds = [...new Set(items.map((i) => String(i.stationId || '')).filter(Boolean))];
 
-      const levelByStation = new Map<string, { level: number; measurementTime: string } | null>();
+      const levelByStation = new Map<
+        string,
+        {
+          level: number;
+          measurementTime: string;
+          flowM3s: number | null;
+          waterTempC: number | null;
+        } | null
+      >();
       await Promise.all(
         stationIds.map(async (sid) => {
           try {
             const m = await fetchStationData(sid, { baseUrl: imgwBaseUrl, timeout: 10000 });
             levelByStation.set(
               sid,
-              m ? { level: m.level, measurementTime: m.measurementTime } : null
+              m
+                ? {
+                    level: m.level,
+                    measurementTime: m.measurementTime,
+                    flowM3s: m.flowM3s,
+                    waterTempC: m.waterTempC,
+                  }
+                : null
             );
           } catch {
             levelByStation.set(sid, null);
@@ -109,6 +124,8 @@ export const handler = async (
           enabled: item.enabled === true,
           currentLevel: live?.level ?? null,
           currentLevelAt: live?.measurementTime ?? null,
+          currentFlowM3s: live?.flowM3s ?? null,
+          currentWaterTempC: live?.waterTempC ?? null,
         };
       });
 

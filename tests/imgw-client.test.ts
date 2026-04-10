@@ -59,7 +59,42 @@ describe('ImgwClient', () => {
       expect(result).not.toBeNull();
       expect(result?.level).toBe(245.5);
       expect(result?.measurementTime).toBe('2026-02-06T10:00:00Z');
+      expect(result?.flowM3s).toBeNull();
+      expect(result?.waterTempC).toBeNull();
       expect(result?.rawData).toBe(measurement);
+    });
+
+    it('should parse przelyw (przepływ m³/s) when present', () => {
+      const measurement = {
+        stan_wody: '260',
+        stan_wody_data_pomiaru: '2026-04-10 12:00:00',
+        przelyw: '2.95',
+      };
+      const result = parseMeasurement(measurement);
+      expect(result).not.toBeNull();
+      expect(result?.level).toBe(260);
+      expect(result?.flowM3s).toBe(2.95);
+      expect(result?.waterTempC).toBeNull();
+      expect(result?.measurementTime).toBe('2026-04-10 12:00:00');
+    });
+
+    it('should parse temperatura_wody (°C) when present', () => {
+      const result = parseMeasurement({
+        stan_wody: 100,
+        data_pomiaru: '2026-04-10T08:00:00Z',
+        temperatura_wody: '12.4',
+      });
+      expect(result?.waterTempC).toBe(12.4);
+    });
+
+    it('should set waterTempC null when temperatura_wody missing or null', () => {
+      expect(parseMeasurement({ stan_wody: 1, temperatura_wody: null })?.waterTempC).toBeNull();
+      expect(parseMeasurement({ stan_wody: 1 })?.waterTempC).toBeNull();
+    });
+
+    it('should set flowM3s null when przelyw missing or null', () => {
+      expect(parseMeasurement({ stan_wody: 1, przelyw: null })?.flowM3s).toBeNull();
+      expect(parseMeasurement({ stan_wody: 1 })?.flowM3s).toBeNull();
     });
 
     it('should parse measurement with string stan_wody', () => {
@@ -162,6 +197,8 @@ describe('ImgwClient', () => {
       expect(result).not.toBeNull();
       expect(result?.level).toBe(245.5);
       expect(result?.measurementTime).toBe('2026-02-06T10:00:00Z');
+      expect(result?.flowM3s).toBeNull();
+      expect(result?.waterTempC).toBeNull();
       expect(global.fetch).toHaveBeenCalledWith(
         `${mockBaseUrl}149200090`,
         expect.objectContaining({

@@ -157,6 +157,10 @@ tbody td.num {
   font-variant-numeric: tabular-nums;
 }
 
+tbody td.level-cell {
+  white-space: nowrap;
+}
+
 tbody td.actions {
   text-align: right;
   cursor: default;

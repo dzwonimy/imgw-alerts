@@ -9,6 +9,8 @@ interface AlertRow {
   enabled: boolean;
   currentLevel: number | null;
   currentLevelAt: string | null;
+  currentFlowM3s?: number | null;
+  currentWaterTempC?: number | null;
 }
 
 interface AppConfig {
@@ -129,9 +131,34 @@ app.append(header, tableWrap);
 
 let rows: AlertRow[] = [];
 
-function formatLevel(n: number | null): string {
+function formatLevelCm(n: number | null): string {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return '—';
   return `${n} cm`;
+}
+
+function formatFlowM3s(n: number | null): string {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
+  const s = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
+  return `${s} m³/s`;
+}
+
+function formatWaterTempC(n: number | null): string {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
+  const v = Number(n);
+  const s = Number.isInteger(v) ? String(v) : String(Number(v.toFixed(1)));
+  return `${s} °C`;
+}
+
+/** Status icon vs alert range: in range / below min / above max */
+function levelStatusEmoji(r: AlertRow): string {
+  const lv = r.currentLevel;
+  if (lv === null || lv === undefined || Number.isNaN(Number(lv))) return '';
+  const min = Number(r.minLevel);
+  const max = Number(r.maxLevel);
+  if (Number.isNaN(min) || Number.isNaN(max)) return '';
+  if (lv >= min && lv <= max) return '✅ ';
+  if (lv < min) return '⬇️ ';
+  return '⬆️ ';
 }
 
 function renderTable(): void {
@@ -145,7 +172,16 @@ function renderTable(): void {
   const table = el('table');
   const thead = el('thead');
   const trh = el('tr');
-  for (const label of ['ID stacji', 'Nazwa', 'Min', 'Max', 'Stan wody', '']) {
+  for (const label of [
+    'ID stacji',
+    'Nazwa',
+    'Min (cm)',
+    'Max (cm)',
+    'Stan wody',
+    'Przepływ (m³/s)',
+    'Temp. wody',
+    '',
+  ]) {
     const th = el('th', '', label);
     trh.append(th);
   }
@@ -161,9 +197,13 @@ function renderTable(): void {
 
     const tdId = el('td', 'num', r.stationId);
     const tdName = el('td', '', r.name || '—');
-    const tdMin = el('td', 'num', String(r.minLevel));
-    const tdMax = el('td', 'num', String(r.maxLevel));
-    const tdLevel = el('td', 'num', formatLevel(r.currentLevel));
+    const tdMin = el('td', 'num', `${r.minLevel} cm`);
+    const tdMax = el('td', 'num', `${r.maxLevel} cm`);
+    const tdLevel = el('td', 'num level-cell');
+    tdLevel.textContent = levelStatusEmoji(r) + formatLevelCm(r.currentLevel);
+
+    const tdFlow = el('td', 'num', formatFlowM3s(r.currentFlowM3s ?? null));
+    const tdTemp = el('td', 'num', formatWaterTempC(r.currentWaterTempC ?? null));
 
     const tdAct = el('td', 'actions');
     const del = el('button', 'btn btn-danger', 'Usuń');
@@ -173,7 +213,7 @@ function renderTable(): void {
     });
     tdAct.append(del);
 
-    tr.append(tdId, tdName, tdMin, tdMax, tdLevel, tdAct);
+    tr.append(tdId, tdName, tdMin, tdMax, tdLevel, tdFlow, tdTemp, tdAct);
     tbody.append(tr);
   }
 

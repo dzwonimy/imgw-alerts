@@ -165,6 +165,8 @@ describe('EventLogger', () => {
     const measurement: ImgwMeasurement = {
       level: 245.5,
       measurementTime: '2026-02-06T10:00:00.000Z',
+      flowM3s: null,
+      waterTempC: null,
       rawData: {},
     };
 
@@ -197,6 +199,8 @@ describe('EventLogger', () => {
     const measurement: ImgwMeasurement = {
       level: 245.5,
       measurementTime: '2026-02-06T10:00:00.000Z',
+      flowM3s: null,
+      waterTempC: null,
       rawData: {},
     };
 
@@ -239,6 +243,8 @@ describe('EventLogger', () => {
     const measurement: ImgwMeasurement = {
       level: 245.5,
       measurementTime: '2026-02-06T10:00:00.000Z',
+      flowM3s: null,
+      waterTempC: null,
       rawData: {},
     };
 

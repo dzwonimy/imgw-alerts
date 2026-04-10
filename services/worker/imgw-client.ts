@@ -5,6 +5,8 @@
 export interface ImgwMeasurement {
   level: number; // stan_wody converted to number
   measurementTime: string; // ISO timestamp from IMGW
+  flowM3s: number | null; // IMGW field `przelyw` (m³/s); null when absent
+  waterTempC: number | null; // IMGW field `temperatura_wody` (°C); null when absent
   rawData: unknown; // Original measurement object for debugging
 }
 
@@ -95,23 +97,39 @@ export function parseMeasurement(measurement: unknown): ImgwMeasurement | null {
     return null; // Invalid number
   }
 
-  // Extract measurement timestamp
-  // IMGW typically provides timestamp in various formats, try common fields
+  // Flow rate from API field `przelyw` (m³/s); often missing
+  const flowRaw = obj.przelyw;
+  const flowM3s =
+    flowRaw === null || flowRaw === undefined || flowRaw === ''
+      ? null
+      : convertToNumber(flowRaw);
+
+  // Water temperature from API field `temperatura_wody` (°C); often missing
+  const tempRaw = obj.temperatura_wody;
+  const waterTempC =
+    tempRaw === null || tempRaw === undefined || tempRaw === ''
+      ? null
+      : convertToNumber(tempRaw);
+
+  // Extract measurement timestamp (hydro API often uses stan_wody_data_pomiaru)
   let measurementTime = '';
-  if (obj.data_pomiaru) {
+  if (obj.stan_wody_data_pomiaru) {
+    measurementTime = String(obj.stan_wody_data_pomiaru);
+  } else if (obj.data_pomiaru) {
     measurementTime = String(obj.data_pomiaru);
   } else if (obj.timestamp) {
     measurementTime = String(obj.timestamp);
   } else if (obj.date) {
     measurementTime = String(obj.date);
   } else {
-    // If no timestamp found, use current time as fallback
     measurementTime = new Date().toISOString();
   }
 
   return {
     level,
     measurementTime,
+    flowM3s,
+    waterTempC,
     rawData: measurement,
   };
 }

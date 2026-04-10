@@ -96,6 +96,8 @@ export const handler = async (_event: unknown, _context: Context): Promise<void>
           const placeholderMeasurement = {
             level: -1,
             measurementTime: new Date().toISOString(),
+            flowM3s: null,
+            waterTempC: null,
             rawData: null,
           };
           await writeEvent(
@@ -203,6 +205,8 @@ export const handler = async (_event: unknown, _context: Context): Promise<void>
         const placeholderMeasurement = {
           level: -1,
           measurementTime: new Date().toISOString(),
+          flowM3s: null,
+          waterTempC: null,
           rawData: null,
         };
         await writeEvent(
@@ -225,20 +229,14 @@ export const handler = async (_event: unknown, _context: Context): Promise<void>
  */
 function formatTelegramMessage(
   alert: AlertConfig,
-  measurement: { level: number; measurementTime: string }
+  measurement: { level: number }
 ): string {
   const stationName = alert.name || `Station ${alert.stationId}`;
   const level = Math.round(measurement.level); // Round to integer
-  const time = new Date(measurement.measurementTime).toLocaleString('pl-PL', {
-    timeZone: 'Europe/Warsaw',
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
 
   return (
     `🌊 <b>Alert: ${stationName}</b>\n\n` +
     `Poziom wody: <b>${level} cm</b>\n` +
-    `Zakres alertu: ${alert.minLevel} - ${alert.maxLevel} cm\n` +
-    `Czas pomiaru: ${time}`
+    `Zakres alertu: ${alert.minLevel} - ${alert.maxLevel} cm`
   );
 }
